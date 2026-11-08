@@ -1,10 +1,18 @@
 // Precios al Día — guarda y entrega la lista de precios de Andrés
 import { getStore } from "@netlify/blobs";
 
+// Permite que la app también funcione desde GitHub Pages
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type, x-pin",
+  "access-control-max-age": "86400"
+};
 const json = (obj, status = 200) =>
-  new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  new Response(JSON.stringify(obj), { status, headers: { ...CORS, "content-type": "application/json", "cache-control": "no-store" } });
 
 export default async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   const store = getStore("precios");
 
   if (req.method === "GET") {

@@ -1,5 +1,7 @@
 /* Precios al Día — Negocios de Andrés · Vibras Positivas HM */
-const API = '/api/precios';
+const SITE = 'https://precios-andres.netlify.app/';
+// En Netlify usa su propia API; en GitHub Pages (u otro sitio) usa la misma API de Netlify
+const API = location.hostname.endsWith('netlify.app') ? '/api/precios' : SITE + 'api/precios';
 const $ = s => document.querySelector(s);
 const LS = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
@@ -182,7 +184,7 @@ async function login(p) {
   } catch (e) { toast(t('errPub')); return false }
 }
 function shareLink() {
-  const url = location.origin + location.pathname;
+  const url = SITE;
   window.open(`https://wa.me/?text=${encodeURIComponent(t('shareMsg') + url)}`, '_blank');
 }
 
