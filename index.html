@@ -113,6 +113,14 @@ main{padding:0 16px 120px}
 .toast{position:fixed;top:calc(14px + env(safe-area-inset-top));left:50%;transform:translateX(-50%) translateY(-120px);z-index:50;background:var(--ink);color:#fff;
   padding:12px 18px;border-radius:14px;font-size:14px;max-width:90vw;transition:transform .3s;box-shadow:0 10px 25px rgba(0,0,0,.25)}
 .toast.show{transform:translateX(-50%) translateY(0)}
+.ownerbar{display:flex;gap:8px;padding:4px 16px 0;flex-wrap:wrap}
+.btn-sm{padding:9px 12px;font-size:13px;border-radius:12px;background:#fff;border:1px solid var(--line);font-weight:600}
+.pend{position:sticky;top:0;z-index:6;margin:8px 16px 0;display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff4d6;border:1px solid #ffd77a;color:#6b4a00;border-radius:14px;padding:10px 12px;font-size:14px;font-weight:600;animation:pop .3s ease}
+.pend .btn{background:var(--amber);color:#3a2700;padding:9px 14px}
+.badge-own{display:inline-block;margin-left:6px;background:var(--amber);color:#3a2700;font-size:11px;padding:2px 8px;border-radius:99px;vertical-align:middle;font-weight:700;letter-spacing:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.box{border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:16px;background:#f8f9fd}
+.box h4{font-size:15px;margin-bottom:8px}
 footer{text-align:center;font-size:12px;color:var(--mute);padding:10px 0 30px}
 footer a{color:var(--navy2);font-weight:600;text-decoration:none}
 </style>
@@ -131,11 +139,10 @@ footer a{color:var(--navy2);font-weight:600;text-decoration:none}
     </div>
   </div>
   <div class="hero">
-    <button class="btn btn-main" id="openBtn" data-t="open">Abrir planilla</button>
-    <button class="btn btn-ghost" id="refreshBtn" data-t="update">Actualizar</button>
+    <div id="heroBtns" style="display:flex;gap:10px;flex-wrap:wrap"></div>
   </div>
   <div class="meta" id="meta"></div>
-  <input type="file" id="file" accept=".xlsx,.xls,.csv,.ods,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" hidden>
+  <input type="file" id="file" accept=".xlsx,.xls,.csv,.ods" hidden>
 </header>
 
 <div id="app"></div>
@@ -148,276 +155,6 @@ footer a{color:var(--navy2);font-weight:600;text-decoration:none}
 <div class="overlay" id="ov"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 
-<script>
-/* Precios al Día — Vibras Positivas HM */
-const $=s=>document.querySelector(s);
-const LS={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
-
-let lang=LS.get('pl_lang','es');
-let data=LS.get('pl_data',null);          // {sheets:{nombre:[items]}, order:[], file, loadedAt}
-let cfg=LS.get('pl_cfg',{name:'',wa:'',url:''});
-let cart=LS.get('pl_cart',{});            // "hoja|clave" -> cantidad
-const st={sheet:data?.order?.[0]||null,q:'',cat:'',onlyChg:false};
-
-const T={
- es:{app:'Precios al Día',title:'Negocios de Andrés',open:'Abrir planilla',update:'Actualizar',settings:'Ajustes',search:'Buscar producto o código…',all:'Todo',changes:'Cambios',
-  products:'productos',changed:'cambiaron',newp:'nuevos',loaded:'Planilla del',file:'Archivo',
-  wT:'Los precios del negocio, siempre a la mano',wP:'Cada vez que el dueño cambie los precios, le manda la planilla de Excel por WhatsApp. Usted la abre aquí y la lista queda al día en el celular, aunque no haya internet.',
-  s1:'Descargue la planilla que le llegó por WhatsApp.',s2:'Toque «Abrir planilla» y escójala en Descargas.',s3:'Busque cualquier producto y vea su precio. Lo que cambió sale marcado.',
-  demo:'Ver un ejemplo',up:'Subió',down:'Bajó',nw:'Nuevo',before:'Antes',noRes:'No hay productos con esa búsqueda.',
-  seeQuote:'Ver cotización',quote:'Cotización',items:'productos en la cotización',send:'Enviar por WhatsApp',empty:'Vaciar',add:'Agregar a la cotización',remove:'Quitar',close:'Cerrar',qty:'Cantidad',total:'Total',
-  bizName:'Nombre del negocio',ownerWa:'WhatsApp para enviar cotizaciones (opcional)',waHint:'Con indicativo, ej. 573001234567. Si lo deja vacío, WhatsApp le pregunta a quién enviarla.',
-  url:'Enlace de la planilla en línea (opcional)',urlHint:'Si el dueño tiene la planilla en Google Drive publicada en la web, pegue aquí el enlace y el botón «Actualizar» la trae sola.',
-  save:'Guardar',erase:'Borrar los datos de este celular',eraseQ:'¿Borrar la lista de precios y la cotización de este celular?',
-  okLoad:'Listo: {n} productos cargados',okSame:'Es la misma planilla, no hay precios nuevos',errFile:'No se pudo leer la planilla. Revise que tenga una columna de Producto y otra de Precio.',
-  errUrl:'No se pudo traer la planilla del enlace. Ábrala desde el archivo.',noUrl:'Abra la planilla nueva que le mandó el dueño, o agregue el enlace en Ajustes.',offline:'Sin internet: se muestra la última planilla guardada.',
-  saved:'Guardado',quoteHead:'Cotización',code:'Cód.',made:'Hecho por',waHello:'Hola, le envío la cotización:',libs:'Cargando lector de Excel, intente de nuevo en un momento.'},
- en:{app:'Prices Today',title:'Andrés’ Stores',open:'Open price sheet',update:'Refresh',settings:'Settings',search:'Search product or code…',all:'All',changes:'Changes',
-  products:'products',changed:'changed',newp:'new',loaded:'Sheet from',file:'File',
-  wT:'Your store prices, always at hand',wP:'Whenever the owner changes prices, he sends the Excel sheet over WhatsApp. Open it here and the list is up to date on your phone, even offline.',
-  s1:'Download the sheet you got on WhatsApp.',s2:'Tap “Open price sheet” and pick it from Downloads.',s3:'Search any product and see its price. Changes are highlighted.',
-  demo:'See an example',up:'Up',down:'Down',nw:'New',before:'Before',noRes:'No products match your search.',
-  seeQuote:'See quote',quote:'Quote',items:'products in the quote',send:'Send via WhatsApp',empty:'Clear',add:'Add to quote',remove:'Remove',close:'Close',qty:'Quantity',total:'Total',
-  bizName:'Store name',ownerWa:'WhatsApp number for quotes (optional)',waHint:'With country code, e.g. 573001234567. Leave empty and WhatsApp will ask who to send it to.',
-  url:'Online sheet link (optional)',urlHint:'If the owner keeps the sheet on Google Drive published to the web, paste the link here and “Refresh” will fetch it.',
-  save:'Save',erase:'Erase data on this phone',eraseQ:'Erase the price list and quote from this phone?',
-  okLoad:'Done: {n} products loaded',okSame:'Same sheet, no new prices',errFile:'Could not read the sheet. Make sure it has a Product column and a Price column.',
-  errUrl:'Could not fetch the sheet from the link. Open it from the file.',noUrl:'Open the new sheet the owner sent you, or add the link in Settings.',offline:'Offline: showing the last saved sheet.',
-  saved:'Saved',quoteHead:'Quote',code:'Code',made:'Made by',waHello:'Hi, here is the quote:',libs:'Loading the Excel reader, try again in a moment.'}
-};
-const t=k=>T[lang][k]??k;
-const money=v=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:v%1?2:0}).format(v);
-const fmtDate=ms=>new Intl.DateTimeFormat(lang==='es'?'es-CO':'en-US',{timeZone:'America/Bogota',dateStyle:'medium',timeStyle:'short'}).format(new Date(ms));
-const norm=s=>String(s??'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const keyOf=i=>norm(i.c||i.n);
-
-function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('show'),2800)}
-
-/* ---------- Lectura de la planilla ---------- */
-function toNum(v){
-  if(typeof v==='number')return isFinite(v)?v:null;
-  let s=String(v??'').replace(/[^\d.,-]/g,'');if(!s)return null;
-  if(/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s))s=s.replace(/\./g,'').replace(',','.');      // 12.500 / 12.500,50
-  else if(/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s))s=s.replace(/,/g,'');                   // 12,500 / 12,500.50
-  else s=s.replace(',','.');
-  const x=parseFloat(s);return isFinite(x)?x:null;
-}
-function parseRows(rows){
-  let h=-1;
-  for(let i=0;i<Math.min(rows.length,40);i++){if(rows[i].some(c=>/precio|valor|pvp|price/.test(norm(c)))){h=i;break}}
-  if(h<0)return[];
-  const hd=rows[h].map(norm);
-  const find=(re,ex)=>hd.findIndex(x=>re.test(x)&&!(ex&&ex.test(x)));
-  let p=find(/precio.*venta|^venta|pvp|price/);
-  if(p<0)p=find(/precio|valor/,/costo|compra/);
-  if(p<0)p=find(/precio|valor/);
-  const n=find(/producto|descripcion|nombre|articulo|item|product/);
-  const c=find(/^cod|codigo|^ref|sku|plu|code/);
-  const cat=find(/categoria|linea|grupo|familia|seccion|category/);
-  const u=find(/unidad|presentacion|empaque|medida|unit/);
-  const b=find(/negocio|sucursal|tienda|sede|punto de venta/);
-  if(n<0||p<0)return[];
-  const out=[];
-  for(let i=h+1;i<rows.length;i++){
-    const r=rows[i]||[];const name=String(r[n]??'').trim();const price=toNum(r[p]);
-    if(!name||price==null)continue;
-    out.push({c:c>=0?String(r[c]??'').trim():'',n:name,cat:cat>=0?String(r[cat]??'').trim():'',u:u>=0?String(r[u]??'').trim():'',p:price,biz:b>=0?String(r[b]??'').trim():''});
-  }
-  return out;
-}
-function parseWorkbook(wb){
-  const sheets={},order=[];
-  wb.SheetNames.forEach(sn=>{
-    const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});
-    const items=parseRows(rows);if(!items.length)return;
-    items.forEach(i=>{const k=i.biz||sn.trim();delete i.biz;if(!sheets[k]){sheets[k]=[];order.push(k)}sheets[k].push(i)});
-  });
-  return{sheets,order};
-}
-function applyNew(parsed,source){
-  if(!parsed.order.length){toast(t('errFile'));return}
-  let total=0,anyChange=false;
-  parsed.order.forEach(sn=>{
-    const old=data?.sheets?.[sn];const map={};(old||[]).forEach(i=>map[keyOf(i)]=i);
-    const same=old&&old.length===parsed.sheets[sn].length&&parsed.sheets[sn].every(i=>map[keyOf(i)]&&map[keyOf(i)].p===i.p);
-    parsed.sheets[sn].forEach(i=>{
-      total++;const o=map[keyOf(i)];
-      if(same){if(o.prev!=null)i.prev=o.prev;if(o.isNew)i.isNew=true;return}   // misma planilla abierta otra vez: se conservan las marcas
-      anyChange=true;
-      if(o){if(o.p!==i.p)i.prev=o.p}else if(old)i.isNew=true;
-    });
-    if(!same)anyChange=true;
-  });
-  data={...parsed,file:source,loadedAt:Date.now()};
-  LS.set('pl_data',data);
-  if(!data.order.includes(st.sheet))st.sheet=data.order[0];
-  st.q='';st.cat='';st.onlyChg=countChg(data.sheets[st.sheet])>0;
-  render();toast(anyChange?t('okLoad').replace('{n}',total):t('okSame'));
-}
-function readFile(f){
-  if(!window.XLSX){toast(t('libs'));return}
-  const r=new FileReader();
-  r.onload=e=>{try{applyNew(parseWorkbook(XLSX.read(e.target.result,{type:'array'})),f.name)}catch(err){console.error(err);toast(t('errFile'))}};
-  r.readAsArrayBuffer(f);
-}
-function sheetUrl(u){const m=u.match(/docs\.google\.com\/spreadsheets\/d\/([^/]+)/);if(m&&!/\/pub|output=/.test(u))return`https://docs.google.com/spreadsheets/d/${m[1]}/export?format=xlsx`;return u}
-async function refresh(silent){
-  if(!cfg.url){if(!silent){toast(t('noUrl'));$('#file').click()}return}
-  if(!navigator.onLine){if(!silent)toast(t('offline'));return}
-  if(!window.XLSX){if(!silent)toast(t('libs'));return}
-  try{
-    const res=await fetch(sheetUrl(cfg.url),{cache:'no-store'});if(!res.ok)throw 0;
-    applyNew(parseWorkbook(XLSX.read(await res.arrayBuffer(),{type:'array'})),'Google Drive');
-  }catch(e){if(!silent)toast(t('errUrl'))}
-}
-
-/* ---------- Ejemplo ---------- */
-function demo(){
-  const base=[['101','Arroz Diana 500 g','Granos','Unidad',2900,2700],['102','Fríjol bola roja 500 g','Granos','Unidad',6800,6800],['103','Lenteja 500 g','Granos','Unidad',3900,3900],
-   ['201','Aceite Premier 1.000 ml','Aceites','Botella',12500,11900],['202','Aceite Gourmet 900 ml','Aceites','Botella',15900,15900],
-   ['301','Leche Proleche 900 ml','Lácteos','Bolsa',4300,4300],['302','Queso costeño libra','Lácteos','Libra',14000,13000],
-   ['401','Ducales sabor a queso','Galletas','Taco',2600,2600],['402','Saltín Noel 5 tacos','Galletas','Paquete',7200,6900],['403','Galletas Muuu leche','Galletas','Paquete',5800,5800],
-   ['501','Atún Van Camp’s lomitos 160 g','Enlatados','Lata',6900,7200],['502','Salchichas Zenú lata','Enlatados','Lata',5400,5400],
-   ['601','Café Sello Rojo 250 g','Bebidas','Bolsa',11800,10900],['602','Chocolisto 200 g','Bebidas','Bolsa',6500,6500]];
-  const mk=(adj,newOne)=>base.map(r=>({c:r[0],n:r[1],cat:r[2],u:r[3],p:Math.round(r[4]*adj/100)*100,prev:r[4]!==r[5]?Math.round(r[5]*adj/100)*100:undefined}))
-    .concat(newOne?[{c:'701',n:'Panela Doña Pola 500 g',cat:'Granos',u:'Unidad',p:3600,isNew:true}]:[]);
-  data={sheets:{'Negocio 1':mk(1,true),'Negocio 2':mk(1.06,false)},order:['Negocio 1','Negocio 2'],file:'ejemplo.xlsx',loadedAt:Date.now()};
-  LS.set('pl_data',data);st.sheet='Negocio 1';st.onlyChg=false;render();
-}
-
-/* ---------- Pantalla ---------- */
-const countChg=list=>(list||[]).filter(i=>i.prev!=null||i.isNew).length;
-function itemTag(i){
-  if(i.isNew)return`<span class="tag nw">${t('nw')}</span>`;
-  if(i.prev!=null)return`<span class="tag ${i.p>i.prev?'up':'down'}">${i.p>i.prev?t('up'):t('down')}</span><span class="was">${t('before')} ${money(i.prev)}</span>`;
-  return'';
-}
-function render(){
-  document.documentElement.lang=lang;
-  document.querySelectorAll('[data-t]').forEach(el=>el.textContent=t(el.dataset.t));
-  $('#langBtn').textContent=lang==='es'?'EN':'ES';
-  $('#bizName').textContent=cfg.name||t('title');
-  $('#refreshBtn').style.display=cfg.url?'':'none';
-  $('#meta').textContent=data?`${t('loaded')} ${fmtDate(data.loadedAt)} · ${t('file')}: ${data.file}`:'';
-  const app=$('#app');
-  if(!data){
-    app.innerHTML=`<main><section class="welcome"><h2>${t('wT')}</h2><p>${t('wP')}</p>
-      <div class="steps"><div class="step"><i>1</i><span>${t('s1')}</span></div><div class="step"><i>2</i><span>${t('s2')}</span></div><div class="step"><i>3</i><span>${t('s3')}</span></div></div>
-      <button class="btn btn-ghost" id="demoBtn">${t('demo')}</button></section>
-      <footer>${t('made')} <a href="https://vibraspositivashm.com" target="_blank" rel="noopener">Vibras Positivas HM</a></footer></main>`;
-    $('#demoBtn').onclick=demo;renderCart();return;
-  }
-  const list=data.sheets[st.sheet]||[];
-  const cats=[...new Set(list.map(i=>i.cat).filter(Boolean))];
-  const nChg=countChg(list),nNew=list.filter(i=>i.isNew).length;
-  const q=norm(st.q);
-  let rows=list.filter(i=>(!st.cat||i.cat===st.cat)&&(!st.onlyChg||i.prev!=null||i.isNew)&&(!q||norm(i.n+' '+i.c+' '+i.cat).includes(q)));
-  const groups={};rows.forEach(i=>{(groups[i.cat||'—']??=[]).push(i)});
-  let html='';
-  if(data.order.length>1)html+=`<div class="tabs">${data.order.map(s=>`<button class="tab ${s===st.sheet?'on':''}" data-sheet="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
-  html+=`<div class="stats"><div class="stat"><b>${list.length}</b><span>${t('products')}</span></div>
-    <div class="stat ${nChg-nNew?'hot':''}"><b>${nChg-nNew}</b><span>${t('changed')}</span></div><div class="stat"><b>${nNew}</b><span>${t('newp')}</span></div></div>
-    <div class="searchbar"><input class="search" id="q" type="search" placeholder="${t('search')}" value="${esc(st.q)}" autocomplete="off">
-    <div class="chips"><button class="chip ${!st.cat&&!st.onlyChg?'on':''}" data-cat="">${t('all')}</button>
-    ${nChg?`<button class="chip alert ${st.onlyChg?'on':''}" data-chg="1">${t('changes')} (${nChg})</button>`:''}
-    ${cats.map(c=>`<button class="chip ${st.cat===c?'on':''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}</div></div><main id="list">`;
-  html+=listHtml(groups,rows);
-  html+=`<footer>${t('made')} <a href="https://vibraspositivashm.com" target="_blank" rel="noopener">Vibras Positivas HM</a></footer></main>`;
-  app.innerHTML=html;
-  app.querySelectorAll('[data-sheet]').forEach(b=>b.onclick=()=>{st.sheet=b.dataset.sheet;st.cat='';st.onlyChg=false;render()});
-  app.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{st.cat=b.dataset.cat;st.onlyChg=false;render()});
-  app.querySelectorAll('[data-chg]').forEach(b=>b.onclick=()=>{st.onlyChg=!st.onlyChg;st.cat='';render()});
-  const qi=$('#q');qi.oninput=()=>{st.q=qi.value;updateList()};
-  bindItems();renderCart();
-}
-function listHtml(groups,rows){
-  if(!rows.length)return`<div class="empty">${t('noRes')}</div>`;
-  return Object.keys(groups).map(g=>`${g!=='—'?`<div class="cat">${esc(g)}</div>`:''}${groups[g].map((i,ix)=>{
-    const k=st.sheet+'|'+keyOf(i);
-    return`<button class="item ${i.isNew?'new':i.prev!=null?'chg':''} ${cart[k]?'incart':''}" data-k="${esc(keyOf(i))}" style="animation-delay:${Math.min(ix,12)*25}ms">
-      <div><div class="nm">${esc(i.n)}</div><div class="sub">${[i.c&&t('code')+' '+esc(i.c),esc(i.u),cart[k]?`${t('qty')}: ${cart[k]}`:''].filter(Boolean).join(' · ')}</div></div>
-      <div class="pr"><b>${money(i.p)}</b>${itemTag(i)}</div></button>`}).join('')}`).join('');
-}
-function updateList(){
-  const list=data.sheets[st.sheet]||[];const q=norm(st.q);
-  const rows=list.filter(i=>(!st.cat||i.cat===st.cat)&&(!st.onlyChg||i.prev!=null||i.isNew)&&(!q||norm(i.n+' '+i.c+' '+i.cat).includes(q)));
-  const groups={};rows.forEach(i=>{(groups[i.cat||'—']??=[]).push(i)});
-  const foot=$('#list footer').outerHTML;$('#list').innerHTML=listHtml(groups,rows)+foot;bindItems();
-}
-function bindItems(){document.querySelectorAll('.item').forEach(b=>b.onclick=()=>openItem(b.dataset.k))}
-const findItem=(sheet,k)=>(data?.sheets?.[sheet]||[]).find(i=>keyOf(i)===k);
-
-/* ---------- Cotización ---------- */
-function openItem(k){
-  const i=findItem(st.sheet,k);if(!i)return;const ck=st.sheet+'|'+k;let n=cart[ck]||1;
-  sheet(`<h3>${esc(i.n)}</h3><div class="sub">${[i.c&&t('code')+' '+esc(i.c),esc(i.u),esc(st.sheet)].filter(Boolean).join(' · ')}</div>
-   <div style="font-size:30px;font-weight:800">${money(i.p)}</div>${itemTag(i)}
-   <div class="qty"><button id="m">−</button><input id="n" inputmode="numeric" value="${n}"><button id="p">+</button></div>
-   <div class="qtotal"><span>${t('total')}</span><span id="lt">${money(i.p*n)}</span></div>
-   <div class="row">${cart[ck]?`<button class="btn btn-soft" id="rm">${t('remove')}</button>`:`<button class="btn btn-soft" id="cl">${t('close')}</button>`}<button class="btn btn-dark" id="ad">${t('add')}</button></div>`);
-  const inp=$('#n'),upd=()=>{n=Math.max(1,parseInt(inp.value)||1);inp.value=n;$('#lt').textContent=money(i.p*n)};
-  $('#m').onclick=()=>{inp.value=n-1;upd()};$('#p').onclick=()=>{inp.value=n+1;upd()};inp.oninput=upd;
-  $('#ad').onclick=()=>{cart[ck]=n;saveCart();closeSheet();render()};
-  if($('#rm'))$('#rm').onclick=()=>{delete cart[ck];saveCart();closeSheet();render()};
-  if($('#cl'))$('#cl').onclick=closeSheet;
-}
-function cartLines(){return Object.entries(cart).map(([ck,q])=>{const[s,...r]=ck.split('|');const i=findItem(s,r.join('|'));return i?{ck,s,i,q}:null}).filter(Boolean)}
-function saveCart(){LS.set('pl_cart',cart)}
-function renderCart(){
-  const L=cartLines();const bar=$('#cartbar');
-  if(!L.length){bar.classList.remove('show');return}
-  const tot=L.reduce((a,l)=>a+l.i.p*l.q,0);
-  $('#cartCount').textContent=`${L.length} ${t('items')}`;$('#cartTotal').textContent=money(tot);bar.classList.add('show');
-}
-function openQuote(){
-  const L=cartLines();const tot=L.reduce((a,l)=>a+l.i.p*l.q,0);
-  sheet(`<h3>${t('quote')}</h3><div class="sub">${esc(cfg.name||t('title'))} · ${fmtDate(Date.now())}</div>
-   ${L.map(l=>`<div class="qline"><div><b>${esc(l.i.n)}</b><div class="sub">${money(l.i.p)}${data.order.length>1?' · '+esc(l.s):''}</div></div>
-     <div class="q"><button data-d="${esc(l.ck)}">−</button><b>${l.q}</b><button data-u="${esc(l.ck)}">+</button><span style="min-width:78px;text-align:right">${money(l.i.p*l.q)}</span></div></div>`).join('')}
-   <div class="qtotal"><span>${t('total')}</span><span>${money(tot)}</span></div>
-   <div class="row"><button class="btn btn-soft" id="qc">${t('empty')}</button><button class="btn btn-wa" id="qs">${t('send')}</button></div>
-   <button class="btn btn-soft" style="width:100%;margin-top:8px" id="qx">${t('close')}</button>`);
-  document.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{const k=b.dataset.d;cart[k]--;if(cart[k]<1)delete cart[k];saveCart();render();cartLines().length?openQuote():closeSheet()});
-  document.querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>{cart[b.dataset.u]++;saveCart();render();openQuote()});
-  $('#qc').onclick=()=>{cart={};saveCart();closeSheet();render()};
-  $('#qx').onclick=closeSheet;
-  $('#qs').onclick=()=>{
-    const txt=`${t('waHello')}\n*${cfg.name||t('title')}* — ${fmtDate(Date.now())}\n\n`+L.map(l=>`• ${l.q} x ${l.i.n} — ${money(l.i.p*l.q)}`).join('\n')+`\n\n*${t('total')}: ${money(tot)}*`;
-    const num=(cfg.wa||'').replace(/\D/g,'');
-    window.open(`https://wa.me/${num}?text=${encodeURIComponent(txt)}`,'_blank');
-  };
-}
-
-/* ---------- Ajustes ---------- */
-function openSettings(){
-  sheet(`<h3>${t('settings')}</h3><div class="sub">&nbsp;</div>
-   <div class="field"><label>${t('bizName')}</label><input id="fn" value="${esc(cfg.name)}" placeholder="${t('title')}"></div>
-   <div class="field"><label>${t('ownerWa')}</label><input id="fw" inputmode="tel" value="${esc(cfg.wa)}" placeholder="573001234567"><div class="hint">${t('waHint')}</div></div>
-   <div class="field"><label>${t('url')}</label><input id="fu" inputmode="url" value="${esc(cfg.url)}" placeholder="https://docs.google.com/spreadsheets/…"><div class="hint">${t('urlHint')}</div></div>
-   <div class="row"><button class="btn btn-soft" id="sx">${t('close')}</button><button class="btn btn-dark" id="ss">${t('save')}</button></div>
-   <button class="danger" id="se">${t('erase')}</button>`);
-  $('#sx').onclick=closeSheet;
-  $('#ss').onclick=()=>{cfg={name:$('#fn').value.trim(),wa:$('#fw').value.trim(),url:$('#fu').value.trim()};LS.set('pl_cfg',cfg);closeSheet();render();toast(t('saved'));if(cfg.url)refresh(true)};
-  $('#se').onclick=()=>{if(confirm(t('eraseQ'))){LS.del('pl_data');LS.del('pl_cart');data=null;cart={};closeSheet();render()}};
-}
-
-/* ---------- Hoja inferior ---------- */
-function sheet(html){$('#sheet').innerHTML=html;$('#ov').classList.add('show')}
-function closeSheet(){$('#ov').classList.remove('show')}
-$('#ov').onclick=e=>{if(e.target.id==='ov')closeSheet()};
-
-$('#openBtn').onclick=()=>$('#file').click();
-$('#file').onchange=e=>{const f=e.target.files[0];if(f)readFile(f);e.target.value=''};
-$('#refreshBtn').onclick=()=>refresh(false);
-$('#setBtn').onclick=openSettings;
-$('#cartOpen').onclick=openQuote;
-$('#langBtn').onclick=()=>{lang=lang==='es'?'en':'es';LS.set('pl_lang',lang);render()};
-window.addEventListener('offline',()=>toast(t('offline')));
-
-render();
-window.addEventListener('load',()=>{if(cfg.url)refresh(true)});
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
-</script>
+<script src="app.js"></script>
 </body>
 </html>
