@@ -15,6 +15,12 @@ let cfg = LS.get('pl_cfg', { name: '', wa: '' });
 let cart = LS.get('pl_cart', {});        // "negocio|clave" -> cantidad
 let pin = LS.get('pl_pin', '');          // clave de Andrés (solo en su celular)
 let dirty = LS.get('pl_dirty', 0);       // cambios de Andrés sin publicar
+let links = LS.get('pl_links', {});      // enlace propio de cada negocio (solo administrador)
+let remoteMsg = '';                      // needLink | badLink
+// Enlace de un negocio: ?n=código. Se guarda para que siga funcionando al instalar la app.
+const qn = new URLSearchParams(location.search).get('n');
+if (qn) LS.set('pl_lock', qn);
+const lock = LS.get('pl_lock', '');
 const owner = () => !!pin;
 const st = { sheet: data?.order?.[0] || null, q: '', cat: '', onlyChg: false };
 
@@ -38,7 +44,7 @@ const T = {
   publish:'Publicar',pending:'{n} cambios sin publicar',published:'Publicado: los negocios ya ven los precios nuevos',errPub:'No se pudo publicar. Revise el internet e intente de nuevo.',
   dirtyKeep:'Tiene cambios sin publicar; publíquelos primero.',addP:'Agregar producto',editT:'Cambiar producto',downloadX:'Descargar Excel',
   fName:'Producto',fPrice:'Precio de venta',fCode:'Código',fCat:'Categoría',fUnit:'Unidad',del:'Eliminar producto',delQ:'¿Eliminar este producto de la lista?',
-  needNP:'Escriba el producto y el precio.',discard:'Descartar cambios',discardQ:'¿Descartar los cambios sin publicar y volver a la lista publicada?',adm:'ADMIN'},
+  needNP:'Escriba el producto y el precio.',needLink:'Para ver los precios, abra el enlace de su negocio que le mandó Andrés.',badLink:'Este enlace ya no funciona. Pídale a Andrés el enlace nuevo de su negocio.',shareT:'Enviar enlace a un negocio',shareP:'Cada negocio recibe su propio enlace y solo ve sus precios.',pubFirst:'Publique primero',copy:'Copiar',copied:'Enlace copiado',shareBiz:'Hola, esta es la app con la lista de precios de {b}. Ábrala y guárdela en la pantalla del celular: ',discard:'Descartar cambios',discardQ:'¿Descartar los cambios sin publicar y volver a la lista publicada?',adm:'ADMIN'},
  en: {app:'Prices Today',title:'Andrés’ Stores',update:'Refresh',settings:'Settings',search:'Search product or code…',all:'All',changes:'Changes',
   products:'products',changed:'changed',newp:'new',loaded:'Prices from',
   wT:'Store prices, always at hand',wP:'Andrés publishes the price list here. Whenever he changes it, this app updates itself when opened, and it keeps working offline.',
@@ -58,7 +64,7 @@ const T = {
   publish:'Publish',pending:'{n} unpublished changes',published:'Published: the stores now see the new prices',errPub:'Could not publish. Check the internet and try again.',
   dirtyKeep:'You have unpublished changes; publish them first.',addP:'Add product',editT:'Edit product',downloadX:'Download Excel',
   fName:'Product',fPrice:'Sale price',fCode:'Code',fCat:'Category',fUnit:'Unit',del:'Delete product',delQ:'Delete this product from the list?',
-  needNP:'Enter the product and the price.',discard:'Discard changes',discardQ:'Discard unpublished changes and go back to the published list?',adm:'ADMIN'}
+  needNP:'Enter the product and the price.',needLink:'To see prices, open the link for your store that Andrés sent you.',badLink:'This link no longer works. Ask Andrés for your store’s new link.',shareT:'Send link to a store',shareP:'Each store gets its own link and only sees its prices.',pubFirst:'Publish first',copy:'Copy',copied:'Link copied',shareBiz:'Hi, this is the app with the price list for {b}. Open it and add it to your home screen: ',discard:'Discard changes',discardQ:'Discard unpublished changes and go back to the published list?',adm:'ADMIN'}
 };
 const t = k => T[lang][k] ?? k;
 const money = v => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: v % 1 ? 2 : 0 }).format(v);
@@ -153,11 +159,15 @@ function downloadXlsx() {
 async function loadRemote(silent) {
   if (owner() && dirty) { if (!silent) toast(t('dirtyKeep')); return }
   try {
-    const r = await fetch(API, { cache: 'no-store' }); if (!r.ok) throw 0;
+    const url = API + (!owner() && lock ? '?n=' + encodeURIComponent(lock) : '');
+    const r = await fetch(url, { cache: 'no-store', headers: owner() ? { 'x-pin': pin } : {} }); if (!r.ok) throw 0;
     const d = await r.json();
+    if (d && d.links) { links = d.links; LS.set('pl_links', links) }
+    if (d && (d.needLink || d.badLink)) { remoteMsg = d.needLink ? 'needLink' : 'badLink'; data = null; LS.del('pl_data'); render(); return }
+    remoteMsg = '';
     if (d && d.order && d.order.length) {
       const had = !!data, changed = !data || d.updatedAt !== data.updatedAt;
-      data = d; saveData();
+      data = { sheets: d.sheets, order: d.order, file: d.file || '', updatedAt: d.updatedAt }; saveData();
       if (!data.order.includes(st.sheet)) st.sheet = data.order[0];
       render();
       if (changed && had) toast(t('gotNew')); else if (!silent) toast(t('upToDate'));
@@ -173,7 +183,7 @@ async function publish() {
     const r = await api({ sheets: data.sheets, order: data.order, file: data.file || '' });
     if (r.status === 401) { toast(t('badPin')); return }
     if (!r.ok) throw 0;
-    const j = await r.json(); data.updatedAt = j.updatedAt; dirty = 0; LS.set('pl_dirty', 0); saveData(); render(); toast(t('published'));
+    const j = await r.json(); data.updatedAt = j.updatedAt; if (j.links) { links = j.links; LS.set('pl_links', links) } dirty = 0; LS.set('pl_dirty', 0); saveData(); render(); toast(t('published'));
   } catch (e) { toast(t('errPub')) } finally { if (btn) btn.disabled = false }
 }
 async function login(p) {
@@ -184,8 +194,16 @@ async function login(p) {
   } catch (e) { toast(t('errPub')); return false }
 }
 function shareLink() {
-  const url = SITE;
-  window.open(`https://wa.me/?text=${encodeURIComponent(t('shareMsg') + url)}`, '_blank');
+  if (!data || !data.order.length) { toast(t('noList')); return }
+  sheet(`<h3>${t('shareT')}</h3><div class="sub">${t('shareP')}</div>
+   ${data.order.map(n => `<div class="qline" style="align-items:center"><b>${esc(n)}</b>${links[n] && !dirty
+     ? `<div class="q"><button class="btn-sm" data-cp="${esc(n)}">${t('copy')}</button><button class="btn btn-wa" style="padding:9px 14px" data-sh="${esc(n)}">WhatsApp</button></div>`
+     : `<span class="sub">${t('pubFirst')}</span>`}</div>`).join('')}
+   <button class="btn btn-soft" style="width:100%;margin-top:14px" id="shx">${t('close')}</button>`);
+  const url = n => SITE + '?n=' + links[n];
+  document.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { const n = b.dataset.sh; window.open(`https://wa.me/?text=${encodeURIComponent(t('shareBiz').replace('{b}', n) + url(n))}`, '_blank') });
+  document.querySelectorAll('[data-cp]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(url(b.dataset.cp)); toast(t('copied')) } catch (e) { toast(url(b.dataset.cp)) } });
+  $('#shx').onclick = closeSheet;
 }
 
 /* ---------- Ejemplo (solo se ve en este celular) ---------- */
@@ -231,8 +249,8 @@ function render() {
     app.innerHTML = owner()
       ? `<main><section class="welcome"><h2>${t('oT')}</h2><p>${t('oP')}</p><div class="steps"><div class="step"><i>1</i><span>${t('s1')}</span></div><div class="step"><i>2</i><span>${t('s2')}</span></div><div class="step"><i>3</i><span>${t('s3')}</span></div></div>
          <button class="btn btn-main" id="up2">${t('upload')}</button></section>${footer()}</main>`
-      : `<main><section class="welcome"><h2>${t('wT')}</h2><p>${t('wP')}</p><p style="margin-top:12px;opacity:.75">${t('noList')}</p>
-         <button class="btn btn-ghost" id="demoBtn">${t('demo')}</button></section>${footer()}</main>`;
+      : `<main><section class="welcome"><h2>${t('wT')}</h2><p>${t('wP')}</p><p style="margin-top:12px;opacity:.75">${t(remoteMsg || (lock ? 'noList' : 'needLink'))}</p>
+         ${lock ? '' : `<button class="btn btn-ghost" id="demoBtn">${t('demo')}</button>`}</section>${footer()}</main>`;
     if ($('#up2')) $('#up2').onclick = () => $('#file').click();
     if ($('#demoBtn')) $('#demoBtn').onclick = demo;
     renderCart(); return;
