@@ -16,7 +16,8 @@ let cart = LS.get('pl_cart', {});        // "negocio|clave" -> cantidad
 let pin = LS.get('pl_pin', '');          // clave de Andrés (solo en su celular)
 let dirty = LS.get('pl_dirty', 0);       // cambios de Andrés sin publicar
 let links = LS.get('pl_links', {});      // enlace propio de cada negocio (solo administrador)
-let remoteMsg = '';                      // needLink | badLink
+let remoteMsg = '';                      // needLink | badLink | expired
+let vence = LS.get('pl_vence', '');      // fecha de vencimiento del servicio
 // Enlace de un negocio: ?n=código. Se guarda para que siga funcionando al instalar la app.
 const qn = new URLSearchParams(location.search).get('n');
 if (qn) LS.set('pl_lock', qn);
@@ -44,7 +45,7 @@ const T = {
   publish:'Publicar',pending:'{n} cambios sin publicar',published:'Publicado: los negocios ya ven los precios nuevos',errPub:'No se pudo publicar. Revise el internet e intente de nuevo.',
   dirtyKeep:'Tiene cambios sin publicar; publíquelos primero.',addP:'Agregar producto',editT:'Cambiar producto',downloadX:'Descargar Excel',
   fName:'Producto',fPrice:'Precio de venta',fCode:'Código',fCat:'Categoría',fUnit:'Unidad',del:'Eliminar producto',delQ:'¿Eliminar este producto de la lista?',
-  needNP:'Escriba el producto y el precio.',needLink:'Para ver los precios, abra el enlace de su negocio que le mandó Andrés.',badLink:'Este enlace ya no funciona. Pídale a Andrés el enlace nuevo de su negocio.',shareT:'Enviar enlace a un negocio',shareP:'Cada negocio recibe su propio enlace y solo ve sus precios.',pubFirst:'Publique primero',copy:'Copiar',copied:'Enlace copiado',shareBiz:'Hola, esta es la app con la lista de precios de {b}. Ábrala y guárdela en la pantalla del celular: ',discard:'Descartar cambios',discardQ:'¿Descartar los cambios sin publicar y volver a la lista publicada?',adm:'ADMIN'},
+  needNP:'Escriba el producto y el precio.',expT:'El servicio de esta app venció',expP:'La app dejó de funcionar el {d}. Para seguir usándola, comuníquese con Vibras Positivas HM.',expBtn:'Escribir por WhatsApp',venceSoon:'La app vence el {d}. Comuníquese con Vibras Positivas HM para renovarla.',needLink:'Para ver los precios, abra el enlace de su negocio que le mandó Andrés.',badLink:'Este enlace ya no funciona. Pídale a Andrés el enlace nuevo de su negocio.',shareT:'Enviar enlace a un negocio',shareP:'Cada negocio recibe su propio enlace y solo ve sus precios.',pubFirst:'Publique primero',copy:'Copiar',copied:'Enlace copiado',shareBiz:'Hola, esta es la app con la lista de precios de {b}. Ábrala y guárdela en la pantalla del celular: ',discard:'Descartar cambios',discardQ:'¿Descartar los cambios sin publicar y volver a la lista publicada?',adm:'ADMIN'},
  en: {app:'Prices Today',title:'Andrés’ Stores',update:'Refresh',settings:'Settings',search:'Search product or code…',all:'All',changes:'Changes',
   products:'products',changed:'changed',newp:'new',loaded:'Prices from',
   wT:'Store prices, always at hand',wP:'Andrés publishes the price list here. Whenever he changes it, this app updates itself when opened, and it keeps working offline.',
@@ -64,7 +65,7 @@ const T = {
   publish:'Publish',pending:'{n} unpublished changes',published:'Published: the stores now see the new prices',errPub:'Could not publish. Check the internet and try again.',
   dirtyKeep:'You have unpublished changes; publish them first.',addP:'Add product',editT:'Edit product',downloadX:'Download Excel',
   fName:'Product',fPrice:'Sale price',fCode:'Code',fCat:'Category',fUnit:'Unit',del:'Delete product',delQ:'Delete this product from the list?',
-  needNP:'Enter the product and the price.',needLink:'To see prices, open the link for your store that Andrés sent you.',badLink:'This link no longer works. Ask Andrés for your store’s new link.',shareT:'Send link to a store',shareP:'Each store gets its own link and only sees its prices.',pubFirst:'Publish first',copy:'Copy',copied:'Link copied',shareBiz:'Hi, this is the app with the price list for {b}. Open it and add it to your home screen: ',discard:'Discard changes',discardQ:'Discard unpublished changes and go back to the published list?',adm:'ADMIN'}
+  needNP:'Enter the product and the price.',expT:'This app’s service has expired',expP:'The app stopped working on {d}. To keep using it, contact Vibras Positivas HM.',expBtn:'Message on WhatsApp',venceSoon:'The app expires on {d}. Contact Vibras Positivas HM to renew it.',needLink:'To see prices, open the link for your store that Andrés sent you.',badLink:'This link no longer works. Ask Andrés for your store’s new link.',shareT:'Send link to a store',shareP:'Each store gets its own link and only sees its prices.',pubFirst:'Publish first',copy:'Copy',copied:'Link copied',shareBiz:'Hi, this is the app with the price list for {b}. Open it and add it to your home screen: ',discard:'Discard changes',discardQ:'Discard unpublished changes and go back to the published list?',adm:'ADMIN'}
 };
 const t = k => T[lang][k] ?? k;
 const money = v => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: v % 1 ? 2 : 0 }).format(v);
@@ -162,6 +163,8 @@ async function loadRemote(silent) {
     const url = API + (!owner() && lock ? '?n=' + encodeURIComponent(lock) : '');
     const r = await fetch(url, { cache: 'no-store', headers: owner() ? { 'x-pin': pin } : {} }); if (!r.ok) throw 0;
     const d = await r.json();
+    if (d && d.vence) { vence = d.vence; LS.set('pl_vence', vence) }
+    if (d && d.expired) { remoteMsg = 'expired'; data = null; LS.del('pl_data'); render(); return }
     if (d && d.links) { links = d.links; LS.set('pl_links', links) }
     if (d && (d.needLink || d.badLink)) { remoteMsg = d.needLink ? 'needLink' : 'badLink'; data = null; LS.del('pl_data'); render(); return }
     remoteMsg = '';
@@ -182,6 +185,7 @@ async function publish() {
   try {
     const r = await api({ sheets: data.sheets, order: data.order, file: data.file || '' });
     if (r.status === 401) { toast(t('badPin')); return }
+    if (r.status === 403) { remoteMsg = 'expired'; render(); return }
     if (!r.ok) throw 0;
     const j = await r.json(); data.updatedAt = j.updatedAt; if (j.links) { links = j.links; LS.set('pl_links', links) } dirty = 0; LS.set('pl_dirty', 0); saveData(); render(); toast(t('published'));
   } catch (e) { toast(t('errPub')) } finally { if (btn) btn.disabled = false }
@@ -189,6 +193,7 @@ async function publish() {
 async function login(p) {
   try {
     const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json', 'x-pin': p }, body: JSON.stringify({ check: true }) });
+    if (r.status === 403) { remoteMsg = 'expired'; render(); return false }
     if (!r.ok) { toast(t('badPin')); return false }
     pin = p; LS.set('pl_pin', pin); return true;
   } catch (e) { toast(t('errPub')); return false }
@@ -244,6 +249,15 @@ function render() {
   if ($('#rfBtn')) $('#rfBtn').onclick = () => loadRemote(false);
   $('#meta').textContent = data && data.updatedAt ? `${t('loaded')} ${fmtDate(data.updatedAt)}` : '';
   const app = $('#app');
+  const fd = d => new Intl.DateTimeFormat(lang === 'es' ? 'es-CO' : 'en-US', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(d + 'T12:00:00Z'));
+  if (remoteMsg === 'expired') {
+    $('#heroBtns').innerHTML = ''; $('#meta').textContent = '';
+    app.innerHTML = `<main><section class="welcome"><h2>${t('expT')}</h2><p>${t('expP').replace('{d}', vence ? fd(vence) : '')}</p>
+      <a class="btn btn-main" style="display:inline-block;text-decoration:none;margin-top:16px" href="https://wa.me/573117700431" target="_blank" rel="noopener">${t('expBtn')}</a></section>${footer()}</main>`;
+    renderCart(); return;
+  }
+  const left = vence ? Math.ceil((new Date(vence + 'T23:59:59-05:00') - Date.now()) / 864e5) : 999;
+  const soon = owner() && left <= 30 ? `<div class="pend" style="background:#ffe9ea;border-color:#ffb3b5;color:#8a1f23"><span>${t('venceSoon').replace('{d}', fd(vence))}</span></div>` : '';
 
   if (!data) {
     app.innerHTML = owner()
@@ -259,7 +273,7 @@ function render() {
   const list = data.sheets[st.sheet] || [];
   const cats = [...new Set(list.map(i => i.cat).filter(Boolean))];
   const nChg = countChg(list), nNew = list.filter(i => i.isNew).length;
-  let html = '';
+  let html = soon;
   if (owner() && dirty) html += `<div class="pend"><span>${t('pending').replace('{n}', dirty)}</span><button class="btn" id="pubBtn">${t('publish')}</button></div>`;
   if (data.order.length > 1) html += `<div class="tabs">${data.order.map(s => `<button class="tab ${s === st.sheet ? 'on' : ''}" data-sheet="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
   html += `<div class="stats"><div class="stat"><b>${list.length}</b><span>${t('products')}</span></div>
